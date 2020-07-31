@@ -464,6 +464,7 @@
 #define D_CMND_SSERIALSEND "SSerialSend"
 #define D_CMND_SBAUDRATE "SBaudrate"
   #define D_JSON_SSERIALRECEIVED "SSerialReceived"
+  #define D_JSON_SSERIALJUNK "SSerialJunkReceived"
 
 // Commands xdrv_09_timers.ino
 #define D_CMND_TIMER "Timer"
