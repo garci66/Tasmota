@@ -24,8 +24,8 @@
 
 #define XDRV_08                    8
 
-const uint8_t SERIAL_BRIDGE_BUFFER_SIZE = 50;  //Dont exceed 256!!! 
-const uint8_t SERIAL_BRIDGE_PACKET_MARKER_BUFFER_SIZE = 5;
+const uint8_t SERIAL_BRIDGE_BUFFER_SIZE = 64;  //Dont exceed 256!!! 
+const uint8_t SERIAL_BRIDGE_PACKET_MARKER_BUFFER_SIZE = 8;
 const uint8_t CRCPoly = 0x9b;
 
 // const crcArray[]={0x0,0x9B,0xAD,0x36,0xC1,0x5A,0x6C,0xF7,0x19,0x82,0xB4,0x2F,0xD8,0x43,0x75,0xEE,0x32,0xA9,0x9F,0x4,0xF3,0x68,0x5E,0xC5,0x2B,0xB0,0x86,0x1D,0xEA,0x71,0x47,0xDC,0x64,
@@ -51,6 +51,7 @@ char *serial_bridge_buffer = nullptr;
 int serial_bridge_packet_marker_buffer[SERIAL_BRIDGE_PACKET_MARKER_BUFFER_SIZE];
 int serial_bridge_in_byte_counter = 0;
 int serial_bridge_packet_counter = 0;
+int unsynched_bytes=0;
 bool serial_bridge_active = true;
 bool serial_bridge_raw = true;
 int in_sync = 0;
@@ -73,6 +74,7 @@ uint8_t* prev_array = nullptr;
 void SerialBridgeInput(void)
 {
   while (SerialBridgeSerial->available()) {
+    //serial_bridge_polling_window=millis();
     yield();
     if (!serial_bridge_raw) {                        // Discard binary data above 127 if no raw reception allowed
       serial_bridge_in_byte_counter = 0;
@@ -94,6 +96,9 @@ void SerialBridgeInput(void)
         if (serial_in_byte==0x5a) {
           in_sync=1;
           //serial_bridge_buffer[serial_bridge_in_byte_counter++] = serial_in_byte;  // Dont save the 0x5a byte starter
+        } else if (serial_in_byte!=0xf0) {                                           //0xf0 is the "ack" mark from the motor board.
+          unsynched_bytes++;
+          AddLog_P2(LOG_LEVEL_INFO, PSTR("Unsynched - bytes: %d" ),unsynched_bytes);
         }
         break;
       case 1:
@@ -173,7 +178,7 @@ void SerialBridgeInput(void)
                 //ToHex_P((unsigned char*)prev_array, my_command-1-2, hex_param, sizeof(hex_param));
                 uint16_t rpm = prev_array[2]*256 + prev_array[3];
                 uint16_t level = prev_array[10]*256 + prev_array[11];
-                Response_P(PSTR("{\"wmCmd%d\":{\"door\":%u, \"rpm\":%u, \"temp1\":%u, \"temp2\":%u, \"temp3\":%u, \"cond1\":%u, \"levl1\":%u}}"),
+                Response_P(PSTR("{\"wmCmd%d\":{\"door\":%u, \"rpm\":%u, \"temp1\":%u, \"temp2\":%u, \"temp3\":%u, \"cond1\":%u, \"levl1\":%u, \"millis\":%lu}}"),
                   my_command,
                   prev_array[1],
                   rpm,
@@ -181,14 +186,15 @@ void SerialBridgeInput(void)
                   prev_array[14],
                   prev_array[15],
                   prev_array[9],
-                  level);
+                  level,millis()-serial_bridge_polling_window);
               } else {
                 char hex_param[my_command*2+1];
                 ToHex_P((unsigned char*)prev_array, my_command, hex_param, sizeof(hex_param));
-                Response_P(PSTR("{\"wmCmd%d\":{\"wmParam1\":\"%s\"}}"),
-                  my_command, hex_param );
+                Response_P(PSTR("{\"wmCmd%d\":{\"wmParam1\":\"%s\", \"millis\":%lu}}"),
+                  my_command, hex_param,millis()-serial_bridge_polling_window);
               }
               MqttPublishPrefixTopic_P(RESULT_OR_TELE, PSTR(D_JSON_SSERIALRECEIVED));
+              serial_bridge_polling_window = millis();
           }
         }
       }
